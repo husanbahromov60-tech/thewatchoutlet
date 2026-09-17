@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* App-dek tajriba: pinch-zoom va double-tap zoom'ni o'chirish */
+html,
+body {
+  touch-action: pan-x pan-y; /* faqat scroll ruxsat, zoom yo'q */
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none; /* pastga tortib sahifani "bounce" qilishni ham to'xtatadi */
+}
+
+/* iOS'da inputga bosganda avtomatik kattalashtirishni to'xtatish uchun
+   BARCHA input/select/textarea shrifti kamida 16px bo'lishi SHART */
+input,
+select,
+textarea {
+  font-size: 16px !important;
+}
+
+/* Ikki marta bosib kattalashtirish (double-tap zoom)ni butun sahifada o'chirish */
+* {
+  touch-action: manipulation;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #112544;
+}
