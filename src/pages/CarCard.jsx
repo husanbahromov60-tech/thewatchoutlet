@@ -38,7 +38,16 @@ const CarCard = ({ car: watch }) => {
       ? watch.images[0]
       : "");
 
+  // 1. Agar ma'lumot bo'lmasa yoki sarlavha va narx bo'lmasa kartochka chiqmaydi
   if (!watch || (!watchTitle && watchPrice === 0)) return null;
+
+  // 2. Status tekshiruvi: Agar status mavjud bo'lib, u "active" bo'lmasa (masalan "no-active"), kartochka render qilinmaydi
+  const currentStatus = String(watch?.status || "")
+    .toLowerCase()
+    .trim();
+  if (watch?.status && currentStatus !== "active") {
+    return null;
+  }
 
   return (
     <>
@@ -66,14 +75,14 @@ const CarCard = ({ car: watch }) => {
           {/* BADGELAR (Brend va B/U) */}
           <div className="absolute flex-col top-2.5 left-2.5 flex items-start gap-1">
             {watch?.brand && (
-              <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-semibold px-2 py-0.5 rounded-md border border-white/10 uppercase">
+              <span className="bg-black/60 backdrop-blur-md text-white text-[8px] font-semibold px-2 py-0.5 rounded-md border border-white/10 uppercase">
                 {watch.brand}
               </span>
             )}
 
             {/* Faqat isUsed haqiqatan true bo'lsa B/U chiqadi */}
             {watch?.isUsed === true && (
-              <span className="bg-amber-500 text-black text-[10px] font-extrabold px-1.5 py-0.5 rounded-md  shadow-md tracking-wider">
+              <span className="bg-amber-500 text-black text-[9px] font-extrabold px-1.5 py-0.5 rounded-md shadow-md tracking-wider">
                 Б/у
               </span>
             )}
