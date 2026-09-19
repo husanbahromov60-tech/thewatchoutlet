@@ -1,4 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import Navbar from "../comps/Navbar";
 import SearchBar from "./SearchBar";
 import CarCard from "./CarCard";
@@ -17,6 +23,11 @@ const UsedWatches = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBrand, setSelectedBrand] = useState("All");
 
+  // PAGINATION STATELARI (15 tadan yuklash uchun)
+  const [visibleCount, setVisibleCount] = useState(15);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerRef = useRef(null);
+
   // Mavjud brendlar ro'yxati
   const availableBrands = useMemo(() => {
     const brandsSet = new Set();
@@ -30,13 +41,48 @@ const UsedWatches = () => {
 
   // Tanlangan brend bo'yicha saralash
   const displayProducts = useMemo(() => {
-    if (selectedBrand === "All") return usedCars;
-    return usedCars.filter(
+    const safeCars = Array.isArray(usedCars) ? usedCars : [];
+    if (selectedBrand === "All") return safeCars;
+    return safeCars.filter(
       (item) =>
         item?.brand &&
         String(item.brand).toLowerCase() === selectedBrand.toLowerCase()
     );
   }, [usedCars, selectedBrand]);
+
+  // Brend o'zgarganda pagination'ni qayta 15 taga reset qilish
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [selectedBrand]);
+
+  // Sahifa oxiriga yetganda keyingi 15 ta mahsulotni yuklash (Infinite Scroll)
+  const lastElementRef = useCallback(
+    (node) => {
+      if (loading || isLoadingMore) return;
+      if (observerRef.current) observerRef.current.disconnect();
+
+      observerRef.current = new IntersectionObserver((entries) => {
+        if (
+          entries[0].isIntersecting &&
+          visibleCount < displayProducts.length
+        ) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            setVisibleCount((prev) => prev + 15);
+            setIsLoadingMore(false);
+          }, 300);
+        }
+      });
+
+      if (node) observerRef.current.observe(node);
+    },
+    [loading, isLoadingMore, visibleCount, displayProducts.length]
+  );
+
+  // Faqat 15 tadan kesib ko'rsatiladigan mahsulotlar ro'yxati
+  const visibleProducts = useMemo(() => {
+    return displayProducts.slice(0, visibleCount);
+  }, [displayProducts, visibleCount]);
 
   return (
     <div className="min-h-screen bg-[#112544]">
@@ -82,19 +128,41 @@ const UsedWatches = () => {
       <div className="px-3 mt-3 pb-20">
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {[1, 2, 3, 4].map((n) => (
+            {[1, 2, 3, 4, 5, 6].map((n) => (
               <div
                 key={n}
-                className="h-64 bg-[#0f192b] animate-pulse rounded-2xl"
+                className="h-64 bg-[#0f192b] animate-pulse rounded-2xl border border-slate-800"
               />
             ))}
           </div>
-        ) : displayProducts.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {displayProducts.map((product) => (
-              <CarCard key={product.id || Math.random()} car={product} />
-            ))}
-          </div>
+        ) : visibleProducts.length > 0 ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {visibleProducts.map((product, index) => {
+                const isLast = index === visibleProducts.length - 1;
+                return (
+                  <div
+                    key={product.id || index}
+                    ref={isLast ? lastElementRef : null}
+                  >
+                    <CarCard car={product} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* PASTDAGI LOADING INDICATOR */}
+            {(isLoadingMore || visibleCount < displayProducts.length) && (
+              <div className="flex justify-center items-center py-6">
+                <div className="flex items-center gap-2 bg-[#0f192b] border border-[#657591] px-4 py-2 rounded-full shadow-lg">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs text-slate-300 font-medium">
+                    Yana yuklanmoqda...
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-10 text-slate-400 text-sm">
             B/u soatlar topilmadi.

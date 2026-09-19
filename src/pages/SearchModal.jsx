@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { FiSearch, FiX } from "react-icons/fi";
 import CarCard from "./CarCard";
 
@@ -7,8 +7,14 @@ const SearchModal = ({
   onClose,
   searchQuery,
   setSearchQuery,
-  cars,
+  cars = [],
 }) => {
+  // PAGINATION STATELARI (15 tadan bo'lib yuklash uchun)
+  const [visibleCount, setVisibleCount] = useState(15);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerRef = useRef(null);
+
+  // 1. Scroll block qilish
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -20,20 +26,25 @@ const SearchModal = ({
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  // 2. Qidiruv matni o'zgarganda sanagichni qayta 15 taga reset qilish
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [searchQuery, isOpen]);
 
-  const filteredCars = cars.filter((car) => {
+  // 3. Filtrlash mantiqi (React Hook'lardan keyin bajariladi)
+  const safeCars = Array.isArray(cars) ? cars : [];
+  const filteredCars = safeCars.filter((car) => {
+    if (!car) return false;
     if (!searchQuery.trim()) return true;
+
     const query = searchQuery.toLowerCase().trim();
 
-    // Nomi va Brend maydonlari
     const name = String(car.name || "").toLowerCase();
     const cardTitle = String(car.cardTitle || "").toLowerCase();
     const title = String(car.title || "").toLowerCase();
     const brand = String(car.brand || "").toLowerCase();
     const model = String(car.model || "").toLowerCase();
 
-    // Ref Code va ID maydonlari
     const refCode = String(
       car.refCode || car.ref_code || car["Ref. Code"] || ""
     ).toLowerCase();
@@ -54,6 +65,33 @@ const SearchModal = ({
     );
   });
 
+  // 4. Pastga tushganda keyingi 15 tasini yuklash (Infinite Scroll)
+  const lastElementRef = useCallback(
+    (node) => {
+      if (isLoadingMore) return;
+      if (observerRef.current) observerRef.current.disconnect();
+
+      observerRef.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && visibleCount < filteredCars.length) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            setVisibleCount((prev) => prev + 15);
+            setIsLoadingMore(false);
+          }, 200);
+        }
+      });
+
+      if (node) observerRef.current.observe(node);
+    },
+    [isLoadingMore, visibleCount, filteredCars.length]
+  );
+
+  // 5. Modal yopiq bo'lsa ekranga hech narsa chiqarmaydi
+  if (!isOpen) return null;
+
+  // Faqat kerakli 15 tasini kesib olish
+  const visibleCars = filteredCars.slice(0, visibleCount);
+
   return (
     <div className="fixed inset-0 z-[10000000000000000000] bg-[#112544] flex flex-col animate-in fade-in duration-200">
       <div className="flex items-center gap-2 p-3 border-b border-slate-100 bg-[#0f192b] shadow-sm">
@@ -70,6 +108,7 @@ const SearchModal = ({
         </div>
         <button
           onClick={onClose}
+          type="button"
           className="p-2 text-white hover:bg-slate-100/10 rounded-xl transition-colors"
         >
           <FiX size={24} />
@@ -87,11 +126,33 @@ const SearchModal = ({
         )}
 
         {filteredCars.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pb-10">
-            {filteredCars.map((car) => (
-              <CarCard key={car.id || Math.random()} car={car} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pb-6">
+              {visibleCars.map((car, index) => {
+                const isLast = index === visibleCars.length - 1;
+                return (
+                  <div
+                    key={car.id || index}
+                    ref={isLast ? lastElementRef : null}
+                  >
+                    <CarCard car={car} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* PASTDAGI LOADING INDICATOR */}
+            {(isLoadingMore || visibleCount < filteredCars.length) && (
+              <div className="flex justify-center items-center pb-10 pt-2">
+                <div className="flex items-center gap-2 bg-[#0f192b] border border-[#657591] px-4 py-2 rounded-full shadow-lg">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs text-slate-300 font-medium">
+                    Yana yuklanmoqda...
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-20 text-slate-400 text-sm">
             "{searchQuery}" bo'yicha hech narsa topilmadi.

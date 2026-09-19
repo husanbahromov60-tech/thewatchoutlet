@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import { FiX } from "react-icons/fi";
 import CarCard from "./CarCard";
 
@@ -6,6 +12,11 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
   const [selectedBrand, setSelectedBrand] = useState("All");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+
+  // PAGINATION STATELARI (15 tadan yuklash uchun)
+  const [visibleCount, setVisibleCount] = useState(15);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -21,10 +32,16 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
     };
   }, [isOpen]);
 
+  // Brend, narx yoki modal holati o'zgarganda pagination'ni 15 taga reset qilish
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [selectedBrand, minPrice, maxPrice, isOpen]);
+
   // Bazadagi soat ma'lumotlaridan brendlar ro'yxatini dinamik shakllantirish
   const availableBrands = useMemo(() => {
     const brandsSet = new Set();
-    cars.forEach((item) => {
+    const safeCars = Array.isArray(cars) ? cars : [];
+    safeCars.forEach((item) => {
       if (item?.brand && String(item.brand).trim() !== "") {
         brandsSet.add(String(item.brand).trim());
       }
@@ -32,10 +49,11 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
     return ["All", ...Array.from(brandsSet)];
   }, [cars]);
 
-  if (!isOpen) return null;
-
   // Filtrlash mantiqi (Faqat Brend va Narx)
-  const filteredCars = cars.filter((car) => {
+  const safeCars = Array.isArray(cars) ? cars : [];
+  const filteredCars = safeCars.filter((car) => {
+    if (!car) return false;
+
     // Brend bo'yicha saralash
     if (selectedBrand !== "All") {
       const carBrand = String(car?.brand || "").toLowerCase();
@@ -50,11 +68,38 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
     return true;
   });
 
+  // Pastga tushganda keyingi 15 tasini yuklash (Infinite Scroll)
+  const lastElementRef = useCallback(
+    (node) => {
+      if (isLoadingMore) return;
+      if (observerRef.current) observerRef.current.disconnect();
+
+      observerRef.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && visibleCount < filteredCars.length) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            setVisibleCount((prev) => prev + 15);
+            setIsLoadingMore(false);
+          }, 200);
+        }
+      });
+
+      if (node) observerRef.current.observe(node);
+    },
+    [isLoadingMore, visibleCount, filteredCars.length]
+  );
+
   const handleReset = () => {
     setSelectedBrand("All");
     setMinPrice("");
     setMaxPrice("");
+    setVisibleCount(15);
   };
+
+  if (!isOpen) return null;
+
+  // Faqat kerakli 15 tasini kesib olish
+  const visibleCars = filteredCars.slice(0, visibleCount);
 
   return (
     <div className="fixed inset-0 z-[10000000000] bg-[#112544] flex flex-col animate-in fade-in duration-200 h-full w-full">
@@ -63,6 +108,7 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
         <h3 className="text-lg font-bold text-white">Filtr va Natijalar</h3>
         <button
           onClick={onClose}
+          type="button"
           className="p-2 text-white hover:bg-slate-800 rounded-xl transition-colors"
         >
           <FiX size={24} />
@@ -122,6 +168,7 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
           <div className="flex justify-end pt-1">
             <button
               onClick={handleReset}
+              type="button"
               className="text-xs font-semibold text-red-500 hover:underline"
             >
               Filtrni tozalash
@@ -139,11 +186,33 @@ const FilterModal = ({ isOpen, onClose, cars = [] }) => {
           </p>
 
           {filteredCars.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pb-10">
-              {filteredCars.map((car) => (
-                <CarCard key={car.id || Math.random()} car={car} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pb-6">
+                {visibleCars.map((car, index) => {
+                  const isLast = index === visibleCars.length - 1;
+                  return (
+                    <div
+                      key={car.id || index}
+                      ref={isLast ? lastElementRef : null}
+                    >
+                      <CarCard car={car} />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* PASTDAGI LOADING INDICATOR */}
+              {(isLoadingMore || visibleCount < filteredCars.length) && (
+                <div className="flex justify-center items-center pb-10 pt-2">
+                  <div className="flex items-center gap-2 bg-[#0f192b] border border-[#657591] px-4 py-2 rounded-full shadow-lg">
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-xs text-slate-300 font-medium">
+                      Yana yuklanmoqda...
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-12 text-slate-400 text-sm">
               Kiritilgan mezonlarga mos soat topilmadi.

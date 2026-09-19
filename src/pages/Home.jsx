@@ -1,4 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import Navbar from "../comps/Navbar";
 import MenuBar from "./MenuBar";
 import SearchBar from "./SearchBar";
@@ -15,6 +21,11 @@ const Home = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBrand, setSelectedBrand] = useState("All");
+
+  // PAGINATION STATELARI (15 tadan yuklash uchun)
+  const [visibleCount, setVisibleCount] = useState(15);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerRef = useRef(null);
 
   // Yangi ma'lumotlar tepaga chiqishi uchun massivni teskari tartibda olamiz
   const rawProducts = useMemo(() => {
@@ -42,6 +53,40 @@ const Home = () => {
     );
   }, [rawProducts, selectedBrand]);
 
+  // Brend o'zgarganda pagination'ni qayta 15 taga reset qilish
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [selectedBrand]);
+
+  // Sahifa oxiriga yetganda keyingi 15 ta mahsulotni yuklash (Infinite Scroll)
+  const lastElementRef = useCallback(
+    (node) => {
+      if (loading || isLoadingMore) return;
+      if (observerRef.current) observerRef.current.disconnect();
+
+      observerRef.current = new IntersectionObserver((entries) => {
+        if (
+          entries[0].isIntersecting &&
+          visibleCount < displayProducts.length
+        ) {
+          setIsLoadingMore(true);
+          setTimeout(() => {
+            setVisibleCount((prev) => prev + 15);
+            setIsLoadingMore(false);
+          }, 300); // Silliq yuklanish uchun qisqa taymer
+        }
+      });
+
+      if (node) observerRef.current.observe(node);
+    },
+    [loading, isLoadingMore, visibleCount, displayProducts.length]
+  );
+
+  // Faqat 15 tadan kesib ko'rsatiladigan mahsulotlar ro'yxati
+  const visibleProducts = useMemo(() => {
+    return displayProducts.slice(0, visibleCount);
+  }, [displayProducts, visibleCount]);
+
   return (
     <div>
       <Navbar />
@@ -51,9 +96,6 @@ const Home = () => {
         onOpenSearch={() => setIsSearchOpen(true)}
         onOpenFilter={() => setIsFilterOpen(true)}
       />
-      {/* <div className="px-[10px]">
-        <h1 className=" text-white text-[15px] ">Barcha yangi soatlar</h1>
-      </div> */}
 
       {/* Yopishqoq (Sticky) va Scroll bo'ladigan brendlar filtri */}
       <div className="sticky border-[1px] border-[#657591] top-0 z-[1000000] mt-[5px] mx-[5px] rounded-[15px] bg-[#0b1329]/95 backdrop-blur-md px-3 py-2">
@@ -78,19 +120,41 @@ const Home = () => {
       <div className="px-3 mt-3 pb-20">
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {[1, 2, 3, 4].map((n) => (
+            {[1, 2, 3, 4, 5, 6].map((n) => (
               <div
                 key={n}
-                className="h-64 bg-[#0f192b] animate-pulse rounded-2xl"
+                className="h-64 bg-[#0f192b] animate-pulse rounded-2xl border border-slate-800"
               />
             ))}
           </div>
-        ) : displayProducts.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {displayProducts.map((product) => (
-              <CarCard key={product.id || Math.random()} car={product} />
-            ))}
-          </div>
+        ) : visibleProducts.length > 0 ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {visibleProducts.map((product, index) => {
+                const isLast = index === visibleProducts.length - 1;
+                return (
+                  <div
+                    key={product.id || Math.random()}
+                    ref={isLast ? lastElementRef : null}
+                  >
+                    <CarCard car={product} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* PASTDAGI LOADING INDICATOR */}
+            {(isLoadingMore || visibleCount < displayProducts.length) && (
+              <div className="flex justify-center items-center py-6">
+                <div className="flex items-center gap-2 bg-[#0f192b] border border-[#657591] px-4 py-2 rounded-full shadow-lg">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs text-slate-300 font-medium">
+                    Yana yuklanmoqda...
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-10 text-slate-400 text-sm">
             E'lonlar topilmadi.

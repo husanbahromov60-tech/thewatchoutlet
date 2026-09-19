@@ -17,6 +17,7 @@ const CarCard = ({ car: watch }) => {
 
   const [isLiked, setIsLiked] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   const docId = watch?.id || watch?.watchId || watch?.messageId;
 
@@ -56,20 +57,30 @@ const CarCard = ({ car: watch }) => {
     <>
       <div
         onClick={() => setShowDetail(true)}
-        className="bg-[#0f192b] rounded-2xl overflow-hidden border-[2px] border-[#657591] shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer"
+        className="bg-[#0f192b] rounded-2xl overflow-hidden border-[2px] border-[#657591] shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group cursor-pointer h-full"
       >
-        {/* RASM */}
-        <div className="relative w-full h-45 bg-slate-900 overflow-hidden">
+        {/* RASM BO'LIMI */}
+        <div className="relative w-full h-44 bg-slate-900 overflow-hidden shrink-0">
+          {/* Rasm yuklanguncha ko'rinadigan Skeleton */}
+          {!imageLoaded && imageUrl && (
+            <div className="absolute inset-0 bg-slate-800 animate-pulse flex items-center justify-center">
+              <span className="text-[10px] text-slate-500">Yuklanmoqda...</span>
+            </div>
+          )}
+
           {imageUrl ? (
             <img
               src={imageUrl}
               alt={watchTitle}
               loading="lazy"
               decoding="async"
-              fetchPriority="low"
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              onLoad={() => setImageLoaded(true)}
+              className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                imageLoaded ? "opacity-100" : "opacity-0"
+              }`}
               onError={(e) => {
                 e.currentTarget.style.display = "none";
+                setImageLoaded(true);
               }}
             />
           ) : (
@@ -79,7 +90,7 @@ const CarCard = ({ car: watch }) => {
           )}
 
           {/* BADGELAR (Brend va B/U) */}
-          <div className="absolute flex-col top-2.5 left-2.5 flex items-start gap-1">
+          <div className="absolute flex-col top-2.5 left-2.5 flex items-start gap-1 z-10">
             {watch?.brand && (
               <span className="bg-black/60 backdrop-blur-md text-white text-[8px] font-semibold px-2 py-0.5 rounded-md border border-white/10 uppercase">
                 {watch.brand}
@@ -108,7 +119,7 @@ const CarCard = ({ car: watch }) => {
           </button>
         </div>
 
-        {/* MA'LUMOT */}
+        {/* MA'LUMOT BO'LIMI */}
         <div className="p-2.5 flex flex-col flex-1 justify-between gap-2">
           <div>
             <h3 className="font-bold text-[13px] text-white leading-snug line-clamp-1 mb-1">
