@@ -26,6 +26,7 @@ const CarCard = ({ car: watch }) => {
 
   const handleToggleLike = (e) => {
     e.stopPropagation();
+
     if (docId) {
       const newState = toggleCarLike(docId);
       setIsLiked(newState);
@@ -41,10 +42,12 @@ const CarCard = ({ car: watch }) => {
   // 1. Agar ma'lumot bo'lmasa yoki sarlavha va narx bo'lmasa kartochka chiqmaydi
   if (!watch || (!watchTitle && watchPrice === 0)) return null;
 
-  // 2. Status tekshiruvi: Agar status mavjud bo'lib, u "active" bo'lmasa (masalan "no-active"), kartochka render qilinmaydi
+  // 2. Status tekshiruvi: Agar status mavjud bo'lib, u "active" bo'lmasa
+  // kartochka render qilinmaydi
   const currentStatus = String(watch?.status || "")
     .toLowerCase()
     .trim();
+
   if (watch?.status && currentStatus !== "active") {
     return null;
   }
@@ -61,6 +64,9 @@ const CarCard = ({ car: watch }) => {
             <img
               src={imageUrl}
               alt={watchTitle}
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               onError={(e) => {
                 e.currentTarget.style.display = "none";
@@ -115,6 +121,7 @@ const CarCard = ({ car: watch }) => {
               <span>
                 {watch?.mechanism || watch?.caseMaterial || "Mexanika"}
               </span>
+
               {watch?.diameter && (
                 <>
                   <span>•</span>
