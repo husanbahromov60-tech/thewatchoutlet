@@ -12,9 +12,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// WebSocket o'rniga HTTP Long Polling ishlatamiz (VPN'siz ishlashi uchun)
+// Firebase'ga Long Polling rejimini to'g'ri o'rnatamiz
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: true,
 });
 
 export default app;
