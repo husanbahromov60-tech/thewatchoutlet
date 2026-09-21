@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,6 +12,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Firestore bazasini eksport qilish
-export const db = getFirestore(app);
+// WebChannel o'rniga Long Polling rejimini ishlatamiz
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
+
 export default app;
