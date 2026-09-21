@@ -1,83 +1,98 @@
 import { useState, useEffect, useCallback } from "react";
-import { db } from "../firebaseConfig";
-import { collection, getDocs } from "firebase/firestore";
 
 export function useCars() {
-  const [cars, setCars] = useState([]); // Faqat YANGI soatlar
-  const [usedCars, setUsedCars] = useState([]); // Faqat B/U soatlar
-  const [installmentCars, setInstallmentCars] = useState([]); // Muddatli to'lov
-  const [allCars, setAllCars] = useState([]); // Barcha soatlar
+  const [cars, setCars] = useState([]);
+  const [usedCars, setUsedCars] = useState([]);
+  const [installmentCars, setInstallmentCars] = useState([]);
+  const [allCars, setAllCars] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Xavfsiz va bir marta ma'lumot olish funksiyasi
-  const fetchAllWatches = useCallback(async () => {
+  // Firestore REST API orqali ma'lumot olish (VPN'siz va blokirovkasiz)
+  const PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+
+  const fetchCollectionREST = async (collectionName) => {
     try {
-      // 1. Asosiy soatlar
-      const snapWatches = await getDocs(collection(db, "watches"));
-      const newWatches = snapWatches.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
+      const response = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`
+      );
+      if (!response.ok) return [];
+
+      const data = await response.json();
+      if (!data.documents) return [];
+
+      return data.documents.map((doc) => {
+        // Document ID'sini olish
+        const id = doc.name.split("/").pop();
+
+        // Firestore REST obyektidan oddiy JSON'ga o'girish
+        const fields = doc.fields || {};
+        const parsedData = {};
+
+        Object.keys(fields).forEach((key) => {
+          const valueObj = fields[key];
+          const valueType = Object.keys(valueObj)[0];
+          parsedData[key] = valueObj[valueType];
+        });
+
+        return { id, ...parsedData };
+      });
+    } catch (e) {
+      console.error(`${collectionName} yuklashda xatolik:`, e);
+      return [];
+    }
+  };
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [newWatches, usedWatchesRaw, installmentWatchesRaw] =
+        await Promise.all([
+          fetchCollectionREST("watches"),
+          fetchCollectionREST("used_watches"),
+          fetchCollectionREST("installment_watches"),
+        ]);
+
+      const formattedNew = newWatches.map((w) => ({
+        ...w,
         isUsed: false,
-        type: doc.data().type || "market",
+        type: w.type || "market",
       }));
 
-      // 2. B/U soatlar (agar kolleksiya bo'lmasa bo'sh massiv qaytaradi)
-      let usedWatches = [];
-      try {
-        const snapUsed = await getDocs(collection(db, "used_watches"));
-        usedWatches = snapUsed.docs.map((doc) => ({
-          id: `used_${doc.id}`,
-          originalId: doc.id,
-          ...doc.data(),
-          isUsed: true,
-          type: "used",
-        }));
-      } catch (e) {
-        console.warn("used_watches kolleksiyasi topilmadi:", e);
-      }
+      const formattedUsed = usedWatchesRaw.map((w) => ({
+        ...w,
+        id: `used_${w.id}`,
+        originalId: w.id,
+        isUsed: true,
+        type: "used",
+      }));
 
-      // 3. Muddatli to'lov soatlari
-      let installmentWatches = [];
-      try {
-        const snapInstallment = await getDocs(
-          collection(db, "installment_watches")
-        );
-        installmentWatches = snapInstallment.docs.map((doc) => ({
-          id: `inst_${doc.id}`,
-          originalId: doc.id,
-          ...doc.data(),
-          isInstallment: true,
-          type: "installment",
-        }));
-      } catch (e) {
-        console.warn("installment_watches kolleksiyasi topilmadi:", e);
-      }
+      const formattedInstallment = installmentWatchesRaw.map((w) => ({
+        ...w,
+        id: `inst_${w.id}`,
+        originalId: w.id,
+        isInstallment: true,
+        type: "installment",
+      }));
 
-      // State'larni yangilash
-      setCars(newWatches);
-      setUsedCars(usedWatches);
-      setInstallmentCars(installmentWatches);
-
-      const combined = [...newWatches, ...usedWatches, ...installmentWatches];
-      setAllCars(combined);
-    } catch (error) {
-      console.error("Firestore ma'lumotlarini olishda xatolik:", error);
+      setCars(formattedNew);
+      setUsedCars(formattedUsed);
+      setInstallmentCars(formattedInstallment);
+      setAllCars([...formattedNew, ...formattedUsed, ...formattedInstallment]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [PROJECT_ID]);
 
   useEffect(() => {
-    fetchAllWatches();
-  }, [fetchAllWatches]);
+    fetchAll();
+  }, [fetchAll]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchAllWatches();
-  }, [fetchAllWatches]);
+    await fetchAll();
+  }, [fetchAll]);
 
   return {
     cars,
@@ -91,131 +106,3 @@ export function useCars() {
 }
 
 export default useCars;
-
-// import { useState, useEffect, useCallback } from "react";
-// import { db } from "../firebaseConfig";
-// import { collection, onSnapshot, query, getDocs } from "firebase/firestore";
-
-// export function useCars() {
-//   const [cars, setCars] = useState([]); // Faqat YANGI soatlar
-//   const [usedCars, setUsedCars] = useState([]); // Faqat B/U soatlar
-//   const [installmentCars, setInstallmentCars] = useState([]); // Muddatli to'lov
-//   const [allCars, setAllCars] = useState([]); // Barcha soatlar (Likelar va Qidiruv uchun)
-
-//   const [loading, setLoading] = useState(true);
-//   const [refreshing, setRefreshing] = useState(false);
-
-//   useEffect(() => {
-//     let newWatches = [];
-//     let usedWatches = [];
-//     let installmentWatches = [];
-
-//     const updateState = () => {
-//       setCars(newWatches);
-//       setUsedCars(usedWatches);
-//       setInstallmentCars(installmentWatches);
-
-//       // Duplikat ID'lar xatosini oldini olish uchun unique prefix qo'shamiz
-//       const combined = [...newWatches, ...usedWatches, ...installmentWatches];
-//       setAllCars(combined);
-//       setLoading(false);
-//       setRefreshing(false);
-//     };
-
-//     // 1. Faqat Yangi Soatlar (watches)
-//     const qWatches = query(collection(db, "watches"));
-//     const unsubWatches = onSnapshot(qWatches, (snapshot) => {
-//       newWatches = snapshot.docs.map((doc) => ({
-//         id: doc.id,
-//         ...doc.data(),
-//         isUsed: false,
-//         type: doc.data().type || "market",
-//       }));
-//       updateState();
-//     });
-
-//     // 2. Faqat B/U Soatlar (used_watches)
-//     const qUsed = query(collection(db, "used_watches"));
-//     const unsubUsed = onSnapshot(qUsed, (snapshot) => {
-//       usedWatches = snapshot.docs.map((doc) => ({
-//         id: `used_${doc.id}`, // ID takrorlanmasligi uchun
-//         originalId: doc.id,
-//         ...doc.data(),
-//         isUsed: true,
-//         type: "used",
-//       }));
-//       updateState();
-//     });
-
-//     // 3. Muddatli to'lov (installment_watches)
-//     const qInstallment = query(collection(db, "installment_watches"));
-//     const unsubInstallment = onSnapshot(qInstallment, (snapshot) => {
-//       installmentWatches = snapshot.docs.map((doc) => ({
-//         id: `inst_${doc.id}`,
-//         originalId: doc.id,
-//         ...doc.data(),
-//         isInstallment: true,
-//         type: "installment",
-//       }));
-//       updateState();
-//     });
-
-//     return () => {
-//       unsubWatches();
-//       unsubUsed();
-//       unsubInstallment();
-//     };
-//   }, []);
-
-//   const refresh = useCallback(async () => {
-//     setRefreshing(true);
-//     try {
-//       const [snapWatches, snapUsed, snapInstallment] = await Promise.all([
-//         getDocs(query(collection(db, "watches"))),
-//         getDocs(query(collection(db, "used_watches"))),
-//         getDocs(query(collection(db, "installment_watches"))),
-//       ]);
-
-//       const newWatches = snapWatches.docs.map((doc) => ({
-//         id: doc.id,
-//         ...doc.data(),
-//         isUsed: false,
-//       }));
-
-//       const usedWatches = snapUsed.docs.map((doc) => ({
-//         id: `used_${doc.id}`,
-//         originalId: doc.id,
-//         ...doc.data(),
-//         isUsed: true,
-//       }));
-
-//       const installmentWatches = snapInstallment.docs.map((doc) => ({
-//         id: `inst_${doc.id}`,
-//         originalId: doc.id,
-//         ...doc.data(),
-//         isInstallment: true,
-//       }));
-
-//       setCars(newWatches);
-//       setUsedCars(usedWatches);
-//       setInstallmentCars(installmentWatches);
-//       setAllCars([...newWatches, ...usedWatches, ...installmentWatches]);
-//     } catch (error) {
-//       console.error("Yangilashda xatolik:", error);
-//     } finally {
-//       setRefreshing(false);
-//     }
-//   }, []);
-
-//   return {
-//     cars,
-//     usedCars,
-//     installmentCars,
-//     allCars,
-//     loading,
-//     refreshing,
-//     refresh,
-//   };
-// }
-
-// export default useCars;
