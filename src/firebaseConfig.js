@@ -12,7 +12,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// WebChannel o'rniga Long Polling rejimini ishlatamiz
+// WebSocket o'rniga HTTP Long Polling ishlatamiz (VPN'siz ishlashi uchun)
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 });
