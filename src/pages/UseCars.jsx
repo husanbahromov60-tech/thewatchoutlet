@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 
 const PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-const CACHE_KEY = "watches_cache_data_v3";
-const CACHE_TIME_KEY = "watches_cache_time_v3";
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutlik kesh
+const CACHE_KEY = "watches_local_cache_v6";
+const CACHE_TIME_KEY = "watches_local_cache_time_v6";
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutlik localStorage kesh
 
 // Firestore REST qiymatlarini oddiy JS obyektiga o'tkazish
 const parseFirestoreFields = (fields) => {
@@ -91,9 +91,10 @@ export function useCars() {
 
   const fetchAll = useCallback(async (forceRefresh = false) => {
     const now = Date.now();
-    const savedCache = sessionStorage.getItem(CACHE_KEY);
-    const savedTime = sessionStorage.getItem(CACHE_TIME_KEY);
+    const savedCache = localStorage.getItem(CACHE_KEY);
+    const savedTime = localStorage.getItem(CACHE_TIME_KEY);
 
+    // Keshni tekshirish
     if (
       !forceRefresh &&
       savedCache &&
@@ -115,25 +116,31 @@ export function useCars() {
     }
 
     try {
-      // 1. Faqat bor bo'lgan "watches" kolleksiyasidan barcha hujjatlarni tortamiz
+      // "watches" kolleksiyasidan barcha 350+ ta soatlarni olish
       const allWatchesRaw = await fetchCollectionREST("watches");
 
       const formattedNew = [];
       const formattedUsed = [];
       const formattedInstallment = [];
 
-      // 2. Turlariga qarab ajratamiz
       const combinedAll = allWatchesRaw.map((w) => {
-        const type = w.type || "market";
-        const isUsed = w.isUsed === true || type === "used";
+        const type = String(w.type || "").toLowerCase();
+
+        const isUsed =
+          w.isUsed === true ||
+          type === "used" ||
+          type === "ishlatilgan" ||
+          type === "b/u";
         const isInstallment =
-          w.isInstallment === true || type === "installment";
+          w.isInstallment === true ||
+          type === "installment" ||
+          type === "nasiya";
 
         const item = {
           ...w,
           isUsed,
           isInstallment,
-          type,
+          type: type || "market",
         };
 
         if (isUsed) {
@@ -147,12 +154,6 @@ export function useCars() {
         return item;
       });
 
-      console.log("--- YUKLANGAN MA'LUMOTLAR ---");
-      console.log("Jami soatlar (watches):", combinedAll.length);
-      console.log("Yangi soatlar:", formattedNew.length);
-      console.log("Ishlatilgan soatlar:", formattedUsed.length);
-      console.log("Nasiya soatlar:", formattedInstallment.length);
-
       const cachePayload = {
         cars: formattedNew,
         usedCars: formattedUsed,
@@ -160,8 +161,9 @@ export function useCars() {
         allCars: combinedAll,
       };
 
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
-      sessionStorage.setItem(CACHE_TIME_KEY, now.toString());
+      // LocalStorage brauzer xotirasiga saqlash
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
+      localStorage.setItem(CACHE_TIME_KEY, now.toString());
 
       setCars(formattedNew);
       setUsedCars(formattedUsed);
