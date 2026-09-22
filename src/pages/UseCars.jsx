@@ -1,13 +1,45 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
-// PROJECT_ID va keshni hook'dan tashqarida e'lon qilamiz.
-// Bu React re-render bo'lganda ortiqcha sikllar va qayta yuklashlarning oldini oladi.
 const PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+const CACHE_KEY = "watches_cache_data_v3";
+const CACHE_TIME_KEY = "watches_cache_time_v3";
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutlik kesh
 
-// So'rovlarni keshlab turish uchun (Firebase limitini tejash)
-let cacheData = null;
-let lastFetchTime = 0;
-const CACHE_DURATION = 60 * 1000; // 1 minut kesh vaqti
+// Firestore REST qiymatlarini oddiy JS obyektiga o'tkazish
+const parseFirestoreFields = (fields) => {
+  if (!fields) return {};
+  const result = {};
+
+  Object.keys(fields).forEach((key) => {
+    const valueObj = fields[key];
+    if (!valueObj) return;
+
+    if ("stringValue" in valueObj) result[key] = valueObj.stringValue;
+    else if ("integerValue" in valueObj)
+      result[key] = Number(valueObj.integerValue);
+    else if ("doubleValue" in valueObj)
+      result[key] = Number(valueObj.doubleValue);
+    else if ("booleanValue" in valueObj) result[key] = valueObj.booleanValue;
+    else if ("arrayValue" in valueObj) {
+      const values = valueObj.arrayValue.values || [];
+      result[key] = values.map((v) => {
+        if (!v) return null;
+        if ("mapValue" in v) return parseFirestoreFields(v.mapValue.fields);
+        const firstKey = Object.keys(v)[0];
+        return v[firstKey];
+      });
+    } else if ("mapValue" in valueObj) {
+      result[key] = parseFirestoreFields(valueObj.mapValue.fields);
+    } else if ("nullValue" in valueObj) {
+      result[key] = null;
+    } else {
+      const firstKey = Object.keys(valueObj)[0];
+      result[key] = valueObj[firstKey];
+    }
+  });
+
+  return result;
+};
 
 export function useCars() {
   const [cars, setCars] = useState([]);
@@ -18,36 +50,37 @@ export function useCars() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Firestore REST API orqali ma'lumot olish
+  // Firestore REST API orqali "watches" kolleksiyasini to'liq yuklash
   const fetchCollectionREST = async (collectionName) => {
     try {
       if (!PROJECT_ID) {
-        console.error("PROJECT_ID topilmadi! .env faylingizni tekshiring.");
+        console.error("PROJECT_ID topilmadi! .env faylini tekshiring.");
         return [];
       }
 
-      const response = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}`
-      );
-      if (!response.ok) return [];
+      let allDocs = [];
+      let pageToken = "";
 
-      const data = await response.json();
-      if (!data.documents) return [];
+      do {
+        let url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionName}?pageSize=100`;
+        if (pageToken) {
+          url += `&pageToken=${encodeURIComponent(pageToken)}`;
+        }
 
-      return data.documents.map((doc) => {
-        // Document ID'sini olish
+        const response = await fetch(url);
+        if (!response.ok) break;
+
+        const data = await response.json();
+        if (data.documents && data.documents.length > 0) {
+          allDocs = [...allDocs, ...data.documents];
+        }
+
+        pageToken = data.nextPageToken || "";
+      } while (pageToken);
+
+      return allDocs.map((doc) => {
         const id = doc.name.split("/").pop();
-
-        // Firestore REST obyektidan oddiy JSON'ga o'girish
-        const fields = doc.fields || {};
-        const parsedData = {};
-
-        Object.keys(fields).forEach((key) => {
-          const valueObj = fields[key];
-          const valueType = Object.keys(valueObj)[0];
-          parsedData[key] = valueObj[valueType];
-        });
-
+        const parsedData = parseFirestoreFields(doc.fields);
         return { id, ...parsedData };
       });
     } catch (e) {
@@ -58,72 +91,89 @@ export function useCars() {
 
   const fetchAll = useCallback(async (forceRefresh = false) => {
     const now = Date.now();
+    const savedCache = sessionStorage.getItem(CACHE_KEY);
+    const savedTime = sessionStorage.getItem(CACHE_TIME_KEY);
 
-    // Agar kesh mavjud bo'lsa va 1 minut o'tmagan bo'lsa (forceRefresh bo'lmasa), keshdan olamiz
-    if (!forceRefresh && cacheData && now - lastFetchTime < CACHE_DURATION) {
-      setCars(cacheData.cars);
-      setUsedCars(cacheData.usedCars);
-      setInstallmentCars(cacheData.installmentCars);
-      setAllCars(cacheData.allCars);
-      setLoading(false);
-      setRefreshing(false);
-      return;
+    if (
+      !forceRefresh &&
+      savedCache &&
+      savedTime &&
+      now - Number(savedTime) < CACHE_DURATION
+    ) {
+      try {
+        const parsed = JSON.parse(savedCache);
+        setCars(parsed.cars || []);
+        setUsedCars(parsed.usedCars || []);
+        setInstallmentCars(parsed.installmentCars || []);
+        setAllCars(parsed.allCars || []);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      } catch (e) {
+        console.error("Keshni o'qishda xatolik:", e);
+      }
     }
 
     try {
-      const [newWatches, usedWatchesRaw, installmentWatchesRaw] =
-        await Promise.all([
-          fetchCollectionREST("watches"),
-          fetchCollectionREST("used_watches"),
-          fetchCollectionREST("installment_watches"),
-        ]);
+      // 1. Faqat bor bo'lgan "watches" kolleksiyasidan barcha hujjatlarni tortamiz
+      const allWatchesRaw = await fetchCollectionREST("watches");
 
-      const formattedNew = newWatches.map((w) => ({
-        ...w,
-        isUsed: false,
-        type: w.type || "market",
-      }));
+      const formattedNew = [];
+      const formattedUsed = [];
+      const formattedInstallment = [];
 
-      const formattedUsed = usedWatchesRaw.map((w) => ({
-        ...w,
-        id: `used_${w.id}`,
-        originalId: w.id,
-        isUsed: true,
-        type: "used",
-      }));
+      // 2. Turlariga qarab ajratamiz
+      const combinedAll = allWatchesRaw.map((w) => {
+        const type = w.type || "market";
+        const isUsed = w.isUsed === true || type === "used";
+        const isInstallment =
+          w.isInstallment === true || type === "installment";
 
-      const formattedInstallment = installmentWatchesRaw.map((w) => ({
-        ...w,
-        id: `inst_${w.id}`,
-        originalId: w.id,
-        isInstallment: true,
-        type: "installment",
-      }));
+        const item = {
+          ...w,
+          isUsed,
+          isInstallment,
+          type,
+        };
 
-      const combinedAll = [
-        ...formattedNew,
-        ...formattedUsed,
-        ...formattedInstallment,
-      ];
+        if (isUsed) {
+          formattedUsed.push(item);
+        } else if (isInstallment) {
+          formattedInstallment.push(item);
+        } else {
+          formattedNew.push(item);
+        }
 
-      // Keshni yangilaymiz
-      cacheData = {
+        return item;
+      });
+
+      console.log("--- YUKLANGAN MA'LUMOTLAR ---");
+      console.log("Jami soatlar (watches):", combinedAll.length);
+      console.log("Yangi soatlar:", formattedNew.length);
+      console.log("Ishlatilgan soatlar:", formattedUsed.length);
+      console.log("Nasiya soatlar:", formattedInstallment.length);
+
+      const cachePayload = {
         cars: formattedNew,
         usedCars: formattedUsed,
         installmentCars: formattedInstallment,
         allCars: combinedAll,
       };
-      lastFetchTime = Date.now();
+
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
+      sessionStorage.setItem(CACHE_TIME_KEY, now.toString());
 
       setCars(formattedNew);
       setUsedCars(formattedUsed);
       setInstallmentCars(formattedInstallment);
       setAllCars(combinedAll);
+    } catch (err) {
+      console.error("Soatlarni yuklashda xatolik:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []); // Bo'sh dependency - cheksiz siklning oldini oladi
+  }, []);
 
   useEffect(() => {
     fetchAll();
@@ -131,7 +181,7 @@ export function useCars() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchAll(true); // Qo'lda yangilanganda keshni buzib yangi ma'lumot oladi
+    await fetchAll(true);
   }, [fetchAll]);
 
   return {
